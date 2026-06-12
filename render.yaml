@@ -6,32 +6,9 @@ services:
     buildCommand: npm install --legacy-peer-deps && npm run build
     startCommand: npm start
     envVars:
+      - fromGroup: viralprinter-shared
       - key: NODE_ENV
         value: production
-      - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: ELEVENLABS_API_KEY
-        sync: false
-      - key: PEXELS_API_KEY
-        sync: false
-      - key: AWS_ACCESS_KEY_ID
-        sync: false
-      - key: AWS_SECRET_ACCESS_KEY
-        sync: false
-      - key: AWS_REGION
-        sync: false
-      - key: AWS_S3_BUCKET
-        sync: false
-      - key: COMPOSIO_API_KEY
-        sync: false
-      - key: COMPOSIO_TIKTOK_ENTITY_ID
-        sync: false
-      - key: CLICKHOUSE_URL
-        sync: false
-      - key: CLICKHOUSE_USER
-        sync: false
-      - key: CLICKHOUSE_PASSWORD
-        sync: false
       - key: RENDER_API_KEY
         sync: false
       - key: RENDER_WORKFLOWS_SERVICE_SLUG
@@ -41,30 +18,7 @@ services:
     name: viralprinter-workflows
     runtime: node
     plan: starter
-    buildCommand: npm install --legacy-peer-deps && npx tsc --project tsconfig.worker.json
-    startCommand: node dist/workers/index.js
+    buildCommand: npm install --legacy-peer-deps && npm run build:worker
+    startCommand: npm run start:worker
     envVars:
-      - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: ELEVENLABS_API_KEY
-        sync: false
-      - key: PEXELS_API_KEY
-        sync: false
-      - key: AWS_ACCESS_KEY_ID
-        sync: false
-      - key: AWS_SECRET_ACCESS_KEY
-        sync: false
-      - key: AWS_REGION
-        sync: false
-      - key: AWS_S3_BUCKET
-        sync: false
-      - key: COMPOSIO_API_KEY
-        sync: false
-      - key: COMPOSIO_TIKTOK_ENTITY_ID
-        sync: false
-      - key: CLICKHOUSE_URL
-        sync: false
-      - key: CLICKHOUSE_USER
-        sync: false
-      - key: CLICKHOUSE_PASSWORD
-        sync: false
+      - fromGroup: viralprinter-shared

@@ -6,11 +6,13 @@ export interface RSSItem {
 }
 
 export async function fetchRSS(url: string, limit = 20): Promise<RSSItem[]> {
-  const res = await fetch(url, {
+  const fetchOptions: RequestInit & { next?: { revalidate: number } } = {
     next: { revalidate: 900 },
     signal: AbortSignal.timeout(5000),
     headers: { "User-Agent": "ViralPrinter/1.0 (RSS Reader)" },
-  });
+  };
+
+  const res = await fetch(url, fetchOptions);
 
   if (!res.ok) {
     console.warn(`[rss] failed to fetch ${url}: ${res.status}`);

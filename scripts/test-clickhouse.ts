@@ -32,3 +32,5 @@ run().catch((err) => {
   console.error("\n✗ FAILED:", err.message ?? err);
   process.exit(1);
 });
+
+export {};

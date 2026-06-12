@@ -8,14 +8,17 @@ export const postToTikTokTask = task(
     script: ScriptResult,
     localVideoPath: string
   ): Promise<PostResult> {
-    const entityId = process.env.COMPOSIO_TIKTOK_ENTITY_ID?.trim() || undefined;
+    const connectedAccountId =
+      process.env.COMPOSIO_TIKTOK_CONNECTED_ACCOUNT_ID?.trim() ||
+      process.env.COMPOSIO_TIKTOK_ENTITY_ID?.trim() ||
+      undefined;
 
-    if (!entityId) {
-      console.log("[postToTikTok] COMPOSIO_TIKTOK_ENTITY_ID not set — running in mock mode");
+    if (!connectedAccountId) {
+      console.log("[postToTikTok] COMPOSIO_TIKTOK_CONNECTED_ACCOUNT_ID not set — running in mock mode");
       return { mock: true, tiktokUrl: videoUrl, localVideoPath };
     }
 
-    console.log(`[postToTikTok] posting via Composio entityId=${entityId}`);
+    console.log(`[postToTikTok] posting via Composio connectedAccountId=${connectedAccountId}`);
 
     const { OpenAIToolSet } = await import("composio-core");
     const toolset = new OpenAIToolSet({ apiKey: process.env.COMPOSIO_API_KEY! });
@@ -32,7 +35,7 @@ export const postToTikTokTask = task(
         disable_duet: false,
         disable_stitch: false,
       },
-      entityId,
+      connectedAccountId,
     });
 
     const tiktokUrl = (result as { share_url?: string }).share_url ?? "";
