@@ -15,6 +15,7 @@ const HOOK_STYLES: { id: HookStyle; label: string; emoji: string; desc: string }
 interface GenerateState {
   status: "idle" | "generating" | "done" | "error";
   taskRunId?: string;
+  videoUrl?: string;
   error?: string;
   pollInterval?: ReturnType<typeof setInterval>;
 }
@@ -60,7 +61,8 @@ export function CreateTab({ profile, initialPrompt = "", onGenerated }: Props) {
         const data = await res.json();
         if (data.status === "succeeded") {
           clearInterval(interval);
-          setState((s) => ({ ...s, status: "done" }));
+          const videoUrl = data.result?.tiktokUrl ?? undefined;
+          setState((s) => ({ ...s, status: "done", videoUrl }));
           onGenerated();
         } else if (data.status === "failed" || data.status === "canceled") {
           clearInterval(interval);
@@ -162,8 +164,27 @@ export function CreateTab({ profile, initialPrompt = "", onGenerated }: Props) {
       )}
 
       {state.status === "done" && (
-        <div className="p-4 bg-green-900/30 border border-green-700 rounded-xl text-green-400 text-sm text-center">
-          ✓ Video generated! Check History tab for the result.
+        <div className="p-4 bg-green-900/30 border border-green-700 rounded-xl space-y-3">
+          <p className="text-green-400 text-sm text-center font-medium">✓ Video generated!</p>
+          {state.videoUrl && (
+            <div className="space-y-2">
+              <video
+                src={state.videoUrl}
+                controls
+                playsInline
+                className="w-full rounded-lg max-h-96 bg-black"
+              />
+              <a
+                href={state.videoUrl}
+                download="viralprinter-video.mp4"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-center text-xs text-pink-400 hover:text-pink-300 transition-colors"
+              >
+                Download MP4 ↓
+              </a>
+            </div>
+          )}
         </div>
       )}
 

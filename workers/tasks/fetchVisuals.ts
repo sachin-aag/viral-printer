@@ -1,5 +1,5 @@
 import { task } from "@renderinc/sdk/workflows";
-import { listBrainrotClips, downloadFile, getPresignedUrl } from "@/lib/s3";
+import { listBrainrotClips, downloadFile } from "@/lib/s3";
 import type { VideoMode } from "@/lib/types";
 import os from "os";
 import path from "path";
@@ -29,23 +29,28 @@ async function fetchBrainrotClips(outputDir: string, durationSeconds: number): P
   const clips = await listBrainrotClips();
   if (clips.length === 0) {
     console.log("[fetchVisuals] No brainrot clips in S3 — falling back to b-roll");
-    return fetchBrollClips("satisfying abstract loop", outputDir, durationSeconds);
+    return fetchBrollClips("satisfying abstract", outputDir, durationSeconds);
   }
 
-  // Pick enough clips to cover the duration (each clip ~15-30s, we'll loop in FFmpeg)
   const picked = shuffleArray(clips).slice(0, Math.ceil(durationSeconds / 15) + 1);
   const paths: string[] = [];
-
   for (let i = 0; i < picked.length; i++) {
     const destPath = path.join(outputDir, `bg-${i}.mp4`);
     await downloadFile(picked[i], destPath);
     paths.push(destPath);
   }
-
   return paths;
 }
 
-async function fetchBrollClips(topic: string, outputDir: string, durationSeconds: number): Promise<string[]> {
+// Ordered fallback topics — tried in sequence until we get clips
+const FALLBACK_TOPICS = ["nature abstract", "city timelapse", "ocean waves", "technology"];
+
+async function fetchBrollClips(
+  topic: string,
+  outputDir: string,
+  durationSeconds: number,
+  _fallbackIdx = 0
+): Promise<string[]> {
   const perPage = Math.min(5, Math.ceil(durationSeconds / 10) + 1);
   const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(topic)}&per_page=${perPage}&orientation=portrait`;
 
@@ -56,22 +61,40 @@ async function fetchBrollClips(topic: string, outputDir: string, durationSeconds
   if (!response.ok) throw new Error(`Pexels API error: ${response.status}`);
 
   const data = (await response.json()) as { videos: PexelsVideo[] };
-  if (!data.videos?.length) {
-    // Fallback to generic topic
-    return fetchBrollClips("nature abstract", outputDir, durationSeconds);
-  }
 
   const paths: string[] = [];
-  for (let i = 0; i < Math.min(data.videos.length, perPage); i++) {
-    const video = data.videos[i];
-    const videoFile = video.video_files.find((f) => f.quality === "hd" || f.quality === "sd");
-    if (!videoFile) continue;
 
-    const destPath = path.join(outputDir, `broll-${i}.mp4`);
-    await downloadVideoFromUrl(videoFile.link, destPath);
-    paths.push(destPath);
+  if (data.videos?.length) {
+    for (let i = 0; i < Math.min(data.videos.length, perPage); i++) {
+      const video = data.videos[i];
+      // Pick best available quality — hd preferred, then sd, then anything
+      const videoFile =
+        video.video_files.find((f) => f.quality === "hd") ??
+        video.video_files.find((f) => f.quality === "sd") ??
+        video.video_files[0];
+      if (!videoFile?.link) continue;
+
+      const destPath = path.join(outputDir, `broll-${i}.mp4`);
+      try {
+        await downloadVideoFromUrl(videoFile.link, destPath);
+        paths.push(destPath);
+      } catch {
+        console.log(`[fetchVisuals] skipping clip ${i} — download failed`);
+      }
+    }
   }
 
+  if (paths.length === 0) {
+    const nextIdx = _fallbackIdx + 1;
+    if (nextIdx < FALLBACK_TOPICS.length) {
+      const fallback = FALLBACK_TOPICS[nextIdx - 1] ?? FALLBACK_TOPICS[0];
+      console.log(`[fetchVisuals] 0 clips for "${topic}" — trying fallback "${fallback}"`);
+      return fetchBrollClips(fallback, outputDir, durationSeconds, nextIdx);
+    }
+    throw new Error(`Could not fetch any b-roll clips after trying all fallback topics`);
+  }
+
+  console.log(`[fetchVisuals] downloaded ${paths.length} clips for "${topic}"`);
   return paths;
 }
 

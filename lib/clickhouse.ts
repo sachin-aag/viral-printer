@@ -7,8 +7,15 @@ export const clickhouse = createClient({
   database: "viralprinter",
 });
 
+// Schema client has no database set so CREATE DATABASE doesn't self-reference
+const schemaClient = createClient({
+  url: process.env.CLICKHOUSE_URL ?? "http://localhost:8123",
+  username: process.env.CLICKHOUSE_USER ?? "default",
+  password: process.env.CLICKHOUSE_PASSWORD ?? "",
+});
+
 export async function ensureSchema(): Promise<void> {
-  await clickhouse.command({
+  await schemaClient.command({
     query: `CREATE DATABASE IF NOT EXISTS viralprinter`,
   });
 

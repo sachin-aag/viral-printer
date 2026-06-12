@@ -12,9 +12,15 @@ import fs from "fs";
 import path from "path";
 import type { AudioResult, WordTimestamp } from "./types";
 
-const polly = new PollyClient({
-  region: process.env.AWS_REGION ?? "us-east-1",
-});
+function makePollyClient() {
+  return new PollyClient({
+    region: process.env.AWS_REGION ?? "us-east-1",
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+    },
+  });
+}
 
 export const DEFAULT_VOICE_ID = "Joanna";
 
@@ -38,6 +44,7 @@ interface PollyWordMark {
 }
 
 export async function generateAudio(text: string, voiceId: string, outputDir: string): Promise<AudioResult> {
+  const polly = makePollyClient();
   const audioPath = path.join(outputDir, "voiceover.mp3");
   const engine: Engine = ["Joanna", "Matthew", "Ruth", "Stephen", "Kevin"].includes(voiceId)
     ? Engine.NEURAL

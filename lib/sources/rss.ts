@@ -7,7 +7,8 @@ export interface RSSItem {
 
 export async function fetchRSS(url: string, limit = 20): Promise<RSSItem[]> {
   const res = await fetch(url, {
-    next: { revalidate: 900 }, // cache 15 min in Next.js
+    next: { revalidate: 900 },
+    signal: AbortSignal.timeout(5000),
     headers: { "User-Agent": "ViralPrinter/1.0 (RSS Reader)" },
   });
 

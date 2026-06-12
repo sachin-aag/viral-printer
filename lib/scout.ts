@@ -16,61 +16,77 @@ export interface ScoutResult {
   fetchedAt: string;
 }
 
+const cache = new Map<string, { result: ScoutResult; expiresAt: number }>();
+const CACHE_TTL_MS = 15 * 60 * 1000;
+
+type Section = "currentAffairs" | "thoughtPieces" | "tiktokTrends";
+
+const SECTION_PROMPTS: Record<Section, string> = {
+  currentAffairs:
+    "Pick 3 breaking news / current affairs stories that would make great TikTok content. Focus on things people are talking about RIGHT NOW.",
+  thoughtPieces:
+    "Pick 3 deeper or contrarian angles — 'did you know' facts, hot takes, or underappreciated stories that make people think.",
+  tiktokTrends:
+    "Pick 3 trend-jacking opportunities — cultural moments, meme formats, or viral hooks that a creator could ride right now.",
+};
+
 export async function scoutWithSources(niche: string): Promise<ScoutResult> {
+  const cached = cache.get(niche);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.result;
+  }
+
   const feeds = await fetchAllSources();
   const digest = buildDigest(feeds);
 
-  const systemPrompt = `You are a viral content strategist for TikTok. You receive a digest of today's trending stories from multiple sources. Your job is to find angles that would work as short-form video content for a "${niche}" account.
+  const [currentAffairs, thoughtPieces, tiktokTrends] = await Promise.all([
+    scoutSection("currentAffairs", niche, digest),
+    scoutSection("thoughtPieces", niche, digest),
+    scoutSection("tiktokTrends", niche, digest),
+  ]);
 
-For each idea, provide:
-- title: a punchy video title (< 10 words)
-- angle: how to spin this for TikTok (the unique take / hook direction)
-- sourceUrl: the original article URL if applicable
-- sourceName: which source it came from
-- viralScore: 1-10 rating on viral potential for TikTok
-
-Return ONLY valid JSON matching:
-{
-  "currentAffairs": [...],   // breaking news, tech launches, world events (3-5 items)
-  "thoughtPieces": [...],    // deeper takes, contrarian opinions, "did you know" angles (3-5 items)
-  "tiktokTrends": [...]      // trend-jacking opportunities, meme formats, cultural moments (3-5 items)
-}`;
-
-  const msg = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 2048,
-    system: systemPrompt,
-    messages: [
-      {
-        role: "user",
-        content: `Here's today's content digest:\n\n${digest}\n\nFind the best viral TikTok angles for a "${niche}" account.`,
-      },
-    ],
-  });
-
-  const text = (msg.content[0] as { text: string }).text.trim();
-  const json = text.replace(/^```json\n?/, "").replace(/\n?```$/, "");
-  const parsed = JSON.parse(json);
-
-  return {
-    currentAffairs: parsed.currentAffairs ?? [],
-    thoughtPieces: parsed.thoughtPieces ?? [],
-    tiktokTrends: parsed.tiktokTrends ?? [],
+  const result: ScoutResult = {
+    currentAffairs,
+    thoughtPieces,
+    tiktokTrends,
     fetchedAt: new Date().toISOString(),
   };
+
+  cache.set(niche, { result, expiresAt: Date.now() + CACHE_TTL_MS });
+  return result;
+}
+
+async function scoutSection(section: Section, niche: string, digest: string): Promise<ScoutIdea[]> {
+  try {
+    const msg = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 1024,
+      system: `You are a TikTok content strategist for a "${niche}" account. Return ONLY a JSON array of exactly 3 objects. Each object: {"title":"<10 words","angle":"<80 chars","sourceUrl":"...","sourceName":"...","viralScore":1-10}. No markdown fences.`,
+      messages: [
+        {
+          role: "user",
+          content: `Headlines:\n${digest}\n\n${SECTION_PROMPTS[section]}`,
+        },
+      ],
+    });
+
+    const text = (msg.content[0] as { text: string }).text.trim();
+    const json = text.replace(/^```json\n?/, "").replace(/\n?```$/, "");
+    return JSON.parse(json) as ScoutIdea[];
+  } catch (err) {
+    console.warn(`[scout] ${section} failed:`, err);
+    return [];
+  }
 }
 
 function buildDigest(feeds: SourceFeed[]): string {
   return feeds
     .map((feed) => {
       const items = feed.items
-        .slice(0, 10)
-        .map((item) => {
-          const desc = item.description ? ` — ${item.description.slice(0, 120)}` : "";
-          return `  • ${item.title}${desc}\n    ${item.link}`;
-        })
+        .slice(0, 7)
+        .map((item) => `• ${item.title} ${item.link}`)
         .join("\n");
-      return `## ${feed.source} (${feed.category})\n${items}`;
+      return `[${feed.source}]\n${items}`;
     })
     .join("\n\n");
 }

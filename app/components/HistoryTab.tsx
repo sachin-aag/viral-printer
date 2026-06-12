@@ -77,11 +77,8 @@ export function HistoryTab() {
                   rel="noopener noreferrer"
                   className="text-xs text-pink-400 hover:text-pink-300 transition-colors"
                 >
-                  View on TikTok →
+                  {post.mock ? "Watch video →" : "View on TikTok →"}
                 </a>
-              )}
-              {post.local_video_path && !post.tiktok_url && (
-                <span className="text-xs text-gray-500 italic">Local preview only</span>
               )}
             </div>
           </div>

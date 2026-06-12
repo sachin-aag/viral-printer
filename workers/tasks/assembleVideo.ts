@@ -7,36 +7,43 @@ import path from "path";
 import fs from "fs";
 
 export const assembleVideoTask = task(
-  { name: "assembleVideo", timeoutSeconds: 300, plan: "starter" },
+  { name: "assembleVideo", timeoutSeconds: 300 },
   async function assembleVideo(
     audio: AudioResult,
     bgVideoPaths: string[],
     runId: string
   ): Promise<string> {
-    console.log(`[assembleVideo] clips=${bgVideoPaths.length} duration=${audio.durationSeconds}s`);
+    if (bgVideoPaths.length === 0) throw new Error("No background video clips available");
+
     const workDir = path.join(os.tmpdir(), `vp-${runId}`);
     fs.mkdirSync(workDir, { recursive: true });
+
+    // Use ffprobe for actual audio duration — word timestamps can be shorter than the file
+    const realDuration = getAudioDuration(audio.audioPath);
+    console.log(`[assembleVideo] clips=${bgVideoPaths.length} duration=${realDuration.toFixed(1)}s`);
 
     const subsPath = path.join(workDir, "subs.ass");
     fs.writeFileSync(subsPath, buildAssSubtitles(audio.wordTimestamps));
 
     const bgPath = bgVideoPaths.length === 1
       ? bgVideoPaths[0]
-      : await concatenateClips(bgVideoPaths, workDir, audio.durationSeconds);
+      : await concatenateClips(bgVideoPaths, workDir, realDuration);
 
     const outputPath = path.join(workDir, "final.mp4");
 
-    // Scale to 9:16 portrait, overlay audio, burn styled subtitles
+    // -t before first -i makes it an INPUT option → finite stream → correct container duration
+    // This fixes the "3:47" duration display bug and ensures the video matches audio length
+    const dur = (realDuration + 0.5).toFixed(3);
     const ffmpegCmd = [
       "ffmpeg -y",
-      `-stream_loop -1 -i "${bgPath}"`,
+      `-stream_loop -1 -t ${dur} -i "${bgPath}"`,
       `-i "${audio.audioPath}"`,
       `-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,ass='${subsPath}'"`,
-      `-t ${audio.durationSeconds + 0.5}`,
       "-c:v libx264 -preset fast -crf 23",
       "-c:a aac -b:a 192k",
       `-map 0:v -map 1:a`,
-      `-shortest "${outputPath}"`,
+      `-t ${dur}`,
+      `"${outputPath}"`,
     ].join(" ");
 
     execSync(ffmpegCmd, { stdio: "pipe" });
@@ -44,16 +51,22 @@ export const assembleVideoTask = task(
   }
 );
 
+function getAudioDuration(audioPath: string): number {
+  const out = execSync(
+    `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`,
+    { encoding: "utf-8" }
+  ).trim();
+  return parseFloat(out);
+}
+
 async function concatenateClips(clips: string[], workDir: string, targetDuration: number): Promise<string> {
   const listFile = path.join(workDir, "clips.txt");
-  // Repeat clips until we have enough duration
   const entries: string[] = [];
   let total = 0;
   let i = 0;
   while (total < targetDuration + 5) {
-    const clip = clips[i % clips.length];
-    entries.push(`file '${clip}'`);
-    total += 15; // estimate 15s per clip; FFmpeg -t will cut off
+    entries.push(`file '${clips[i % clips.length]}'`);
+    total += 15;
     i++;
   }
   fs.writeFileSync(listFile, entries.join("\n"));

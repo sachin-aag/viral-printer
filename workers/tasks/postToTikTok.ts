@@ -12,7 +12,7 @@ export const postToTikTokTask = task(
 
     if (!entityId) {
       console.log("[postToTikTok] COMPOSIO_TIKTOK_ENTITY_ID not set — running in mock mode");
-      return { mock: true, localVideoPath };
+      return { mock: true, tiktokUrl: videoUrl, localVideoPath };
     }
 
     console.log(`[postToTikTok] posting via Composio entityId=${entityId}`);

@@ -7,9 +7,8 @@ export interface SourceFeed {
 }
 
 const FEEDS: { url: string; source: string; category: SourceFeed["category"] }[] = [
-  // Current affairs / tech news
   {
-    url: "https://hnrss.org/frontpage?count=20",
+    url: "https://hnrss.org/frontpage?count=10",
     source: "Hacker News",
     category: "tech",
   },
@@ -23,18 +22,11 @@ const FEEDS: { url: string; source: string; category: SourceFeed["category"] }[]
     source: "TechCrunch",
     category: "tech",
   },
-  // Culture & trends
-  {
-    url: "https://www.reddit.com/r/trending/.rss",
-    source: "Reddit Trending",
-    category: "trends",
-  },
   {
     url: "https://trends.google.com/trending/rss?geo=US",
     source: "Google Trends",
     category: "trends",
   },
-  // Thought pieces / longform
   {
     url: "https://feeds.arstechnica.com/arstechnica/features",
     source: "Ars Technica",

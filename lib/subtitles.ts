@@ -1,31 +1,7 @@
 import type { WordTimestamp } from "./types";
 
-interface CaptionGroup {
-  words: string;
-  start: number;
-  end: number;
-}
-
-// Group words into caption chunks of ~3 words each
-export function buildCaptionGroups(wordTimestamps: WordTimestamp[], wordsPerChunk = 3): CaptionGroup[] {
-  const groups: CaptionGroup[] = [];
-
-  for (let i = 0; i < wordTimestamps.length; i += wordsPerChunk) {
-    const chunk = wordTimestamps.slice(i, i + wordsPerChunk);
-    groups.push({
-      words: chunk.map((w) => w.word).join(" "),
-      start: chunk[0].start,
-      end: chunk[chunk.length - 1].end,
-    });
-  }
-
-  return groups;
-}
-
-// Convert to ASS (Advanced SubStation Alpha) format for styled TikTok-like captions
+// TikTok-style captions: 3-word groups, active word highlighted in yellow, centered
 export function buildAssSubtitles(wordTimestamps: WordTimestamp[], videoWidth = 1080, videoHeight = 1920): string {
-  const groups = buildCaptionGroups(wordTimestamps, 3);
-
   const header = `[Script Info]
 ScriptType: v4.00+
 PlayResX: ${videoWidth}
@@ -34,21 +10,38 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,70,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,2,50,50,80,1
+Style: Default,Arial,88,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,2,0,1,5,0,5,50,50,50,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`;
 
-  const events = groups
-    .map((group) => {
-      const start = formatAssTime(group.start);
-      const end = formatAssTime(group.end);
-      const text = group.words.toUpperCase();
-      return `Dialogue: 0,${start},${end},Default,,0,0,0,,${text}`;
-    })
-    .join("\n");
+  const CHUNK = 3;
+  const events: string[] = [];
 
-  return `${header}\n${events}\n`;
+  for (let i = 0; i < wordTimestamps.length; i += CHUNK) {
+    const chunk = wordTimestamps.slice(i, i + CHUNK);
+
+    // Each word in the group: highlight the active word in yellow, rest in white
+    chunk.forEach((activeWord, j) => {
+      const start = formatAssTime(activeWord.start);
+      const end = formatAssTime(activeWord.end);
+
+      const line = chunk
+        .map((w, k) => {
+          const upper = w.word.toUpperCase();
+          // Yellow for active word, white for others (ASS uses BGR hex)
+          return k === j
+            ? `{\\c&H00FFFF&}${upper}{\\c&HFFFFFF&}`
+            : upper;
+        })
+        .join(" ");
+
+      // {\an5} = alignment override: center-middle of screen
+      events.push(`Dialogue: 0,${start},${end},Default,,0,0,0,,{\\an5}${line}`);
+    });
+  }
+
+  return `${header}\n${events.join("\n")}\n`;
 }
 
 function formatAssTime(seconds: number): string {
