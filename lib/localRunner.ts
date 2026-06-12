@@ -4,7 +4,7 @@
  * In production on Render this file is never imported.
  */
 
-import type { GenerateRequest, PostResult } from "./types";
+import { PIPELINE_STEPS, type GenerateRequest, type PostResult, type StepStatus } from "./types";
 
 type JobStatus = "running" | "succeeded" | "failed";
 
@@ -12,6 +12,8 @@ interface Job {
   status: JobStatus;
   startedAt: string;
   completedAt?: string;
+  steps: StepStatus[];
+  currentStep?: string;
   result?: PostResult;
   error?: string;
 }
@@ -23,8 +25,27 @@ export function getJob(runId: string): Job | undefined {
   return jobs.get(runId);
 }
 
+function createPendingSteps(): StepStatus[] {
+  return PIPELINE_STEPS.map((step) => ({ ...step, status: "pending" }));
+}
+
+function updateStep(runId: string, stepName: string, status: StepStatus["status"]) {
+  const job = jobs.get(runId);
+  if (!job) return;
+
+  jobs.set(runId, {
+    ...job,
+    currentStep: status === "running" ? stepName : job.currentStep,
+    steps: job.steps.map((step) => (step.name === stepName ? { ...step, status } : step)),
+  });
+}
+
 export async function startLocalRun(runId: string, request: GenerateRequest): Promise<void> {
-  jobs.set(runId, { status: "running", startedAt: new Date().toISOString() });
+  jobs.set(runId, {
+    status: "running",
+    startedAt: new Date().toISOString(),
+    steps: createPendingSteps(),
+  });
 
   // Fire-and-forget — do not await here
   runPipeline(runId, request).catch((err: unknown) => {
@@ -33,6 +54,8 @@ export async function startLocalRun(runId: string, request: GenerateRequest): Pr
       status: "failed",
       startedAt: jobs.get(runId)?.startedAt ?? new Date().toISOString(),
       completedAt: new Date().toISOString(),
+      steps: jobs.get(runId)?.steps ?? createPendingSteps(),
+      currentStep: jobs.get(runId)?.currentStep,
       error: String(err),
     });
   });
@@ -40,12 +63,16 @@ export async function startLocalRun(runId: string, request: GenerateRequest): Pr
 
 async function runPipeline(runId: string, request: GenerateRequest): Promise<void> {
   // Lazy import so this module doesn't pull worker deps into the Next.js browser bundle
-  const { tiktokPipelineTask } = await import("../workers/pipeline");
-  const result = await tiktokPipelineTask(request, runId);
+  const { runTikTokPipeline } = await import("../workers/pipeline");
+  const result = await runTikTokPipeline(request, runId, (stepName, status) =>
+    updateStep(runId, stepName, status)
+  );
   jobs.set(runId, {
     status: "succeeded",
     startedAt: jobs.get(runId)?.startedAt ?? new Date().toISOString(),
     completedAt: new Date().toISOString(),
+    steps: jobs.get(runId)?.steps ?? createPendingSteps(),
+    currentStep: undefined,
     result,
   });
 }

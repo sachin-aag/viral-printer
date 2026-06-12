@@ -1,7 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import type { HookStyle, VideoMode, Profile, GenerateRequest } from "@/lib/types";
+import {
+  PIPELINE_STEPS,
+  type GenerateRequest,
+  type HookStyle,
+  type Profile,
+  type RunStatus,
+  type StepStatus,
+  type VideoMode,
+} from "@/lib/types";
 
 const HOOK_STYLES: { id: HookStyle; label: string; emoji: string; desc: string }[] = [
   { id: "curiosity", label: "Curiosity", emoji: "🤔", desc: "You won't believe..." },
@@ -15,6 +23,7 @@ const HOOK_STYLES: { id: HookStyle; label: string; emoji: string; desc: string }
 interface GenerateState {
   status: "idle" | "generating" | "done" | "error";
   taskRunId?: string;
+  runStatus?: RunStatus;
   videoUrl?: string;
   error?: string;
   pollInterval?: ReturnType<typeof setInterval>;
@@ -31,7 +40,6 @@ export function CreateTab({ profile, initialPrompt = "", onGenerated }: Props) {
   const [hookStyle, setHookStyle] = useState<HookStyle>("curiosity");
   const [videoMode, setVideoMode] = useState<VideoMode>("brainrot");
   const [state, setState] = useState<GenerateState>({ status: "idle" });
-  const [steps, setSteps] = useState<Record<string, "pending" | "running" | "done">>({});
 
   async function handleGenerate() {
     if (!prompt.trim() || state.status === "generating") return;
@@ -55,23 +63,31 @@ export function CreateTab({ profile, initialPrompt = "", onGenerated }: Props) {
   }
 
   function pollStatus(taskRunId: string) {
-    const interval = setInterval(async () => {
+    let interval: ReturnType<typeof setInterval> | undefined;
+
+    const refreshStatus = async () => {
       try {
         const res = await fetch(`/api/status/${taskRunId}`);
-        const data = await res.json();
+        const data = (await res.json()) as RunStatus;
+        if (!res.ok) throw new Error(data.error ?? "Failed to load status.");
+
+        setState((s) => ({ ...s, runStatus: data }));
         if (data.status === "succeeded") {
-          clearInterval(interval);
+          if (interval) clearInterval(interval);
           const videoUrl = data.result?.tiktokUrl ?? undefined;
           setState((s) => ({ ...s, status: "done", videoUrl }));
           onGenerated();
         } else if (data.status === "failed" || data.status === "canceled") {
-          clearInterval(interval);
+          if (interval) clearInterval(interval);
           setState((s) => ({ ...s, status: "error", error: data.error ?? "Pipeline failed." }));
         }
       } catch {
         // ignore transient poll failures
       }
-    }, 3000);
+    };
+
+    void refreshStatus();
+    interval = setInterval(refreshStatus, 3000);
   }
 
   return (
@@ -160,7 +176,7 @@ export function CreateTab({ profile, initialPrompt = "", onGenerated }: Props) {
       </button>
 
       {state.status === "generating" && state.taskRunId && (
-        <PipelineProgress taskRunId={state.taskRunId} />
+        <PipelineProgress taskRunId={state.taskRunId} runStatus={state.runStatus} />
       )}
 
       {state.status === "done" && (
@@ -197,30 +213,75 @@ export function CreateTab({ profile, initialPrompt = "", onGenerated }: Props) {
   );
 }
 
-function PipelineProgress({ taskRunId }: { taskRunId: string }) {
-  const STEPS = [
-    "Generating hook",
-    "Writing script",
-    "Creating voiceover",
-    "Sourcing visuals",
-    "Assembling video",
-    "Uploading media",
-    "Posting to TikTok",
-    "Saving analytics",
-  ];
+function PipelineProgress({
+  taskRunId,
+  runStatus,
+}: {
+  taskRunId: string;
+  runStatus?: RunStatus;
+}) {
+  const steps =
+    runStatus?.steps?.length ?
+      runStatus.steps
+    : PIPELINE_STEPS.map((step) => ({ ...step, status: "pending" as const }));
 
   return (
-    <div className="p-4 bg-gray-900 border border-gray-800 rounded-xl">
+    <div className="relative overflow-hidden p-4 bg-gray-900 border border-gray-800 rounded-xl">
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-pink-400/80 to-transparent animate-pulse" />
       <p className="text-xs text-gray-500 mb-3 font-mono">run: {taskRunId.slice(0, 16)}...</p>
       <div className="space-y-2">
-        {STEPS.map((step, i) => (
-          <div key={i} className="flex items-center gap-3">
-            <div className="w-2 h-2 rounded-full bg-gray-700 shrink-0" />
-            <span className="text-xs text-gray-500">{step}</span>
+        {steps.map((step, i) => (
+          <div
+            key={step.name}
+            className={`flex items-center gap-3 rounded-lg px-2 py-1.5 transition-all duration-500 ${
+              step.status === "running" ? "bg-pink-500/10 translate-x-1" : ""
+            }`}
+            style={{ transitionDelay: `${i * 35}ms` }}
+          >
+            <StepDot status={step.status} />
+            <span
+              className={`text-xs transition-colors duration-300 ${
+                step.status === "succeeded" ? "text-emerald-300"
+                : step.status === "running" ? "text-pink-200"
+                : step.status === "failed" ? "text-red-300"
+                : "text-gray-500"
+              }`}
+            >
+              {step.label}
+            </span>
           </div>
         ))}
       </div>
       <p className="text-xs text-gray-600 mt-3">Pipeline running on Render Workflows...</p>
     </div>
   );
+}
+
+function StepDot({ status }: { status: StepStatus["status"] }) {
+  if (status === "succeeded") {
+    return (
+      <span className="grid w-4 h-4 place-items-center rounded-full bg-emerald-500 text-[10px] text-gray-950 font-bold shrink-0 transition-all duration-300">
+        ✓
+      </span>
+    );
+  }
+
+  if (status === "failed") {
+    return (
+      <span className="grid w-4 h-4 place-items-center rounded-full bg-red-500 text-[10px] text-white font-bold shrink-0">
+        !
+      </span>
+    );
+  }
+
+  if (status === "running") {
+    return (
+      <span className="relative grid w-4 h-4 place-items-center shrink-0">
+        <span className="absolute inset-0 rounded-full bg-pink-400 opacity-60 animate-ping" />
+        <span className="relative w-2.5 h-2.5 rounded-full bg-pink-300 shadow-[0_0_12px_rgba(244,114,182,0.85)] animate-pulse" />
+      </span>
+    );
+  }
+
+  return <span className="w-2 h-2 ml-1 rounded-full bg-gray-700 shrink-0 transition-colors" />;
 }

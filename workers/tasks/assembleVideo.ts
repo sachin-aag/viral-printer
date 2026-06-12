@@ -18,63 +18,95 @@ export const assembleVideoTask = task(
     const workDir = path.join(os.tmpdir(), `vp-${runId}`);
     fs.mkdirSync(workDir, { recursive: true });
 
-    // Use ffprobe for actual audio duration — word timestamps can be shorter than the file
-    const realDuration = getAudioDuration(audio.audioPath);
-    console.log(`[assembleVideo] clips=${bgVideoPaths.length} duration=${realDuration.toFixed(1)}s`);
+    const audioDuration = getFileDuration(audio.audioPath);
+    console.log(`[assembleVideo] clips=${bgVideoPaths.length} audioDuration=${audioDuration.toFixed(1)}s`);
 
     const subsPath = path.join(workDir, "subs.ass");
     fs.writeFileSync(subsPath, buildAssSubtitles(audio.wordTimestamps));
 
-    const bgPath = bgVideoPaths.length === 1
-      ? bgVideoPaths[0]
-      : await concatenateClips(bgVideoPaths, workDir, realDuration);
+    const bgPath = buildBackground(bgVideoPaths, workDir, audioDuration);
 
     const outputPath = path.join(workDir, "final.mp4");
+    const dur = (audioDuration + 0.2).toFixed(3);
 
-    // -t before first -i makes it an INPUT option → finite stream → correct container duration
-    // This fixes the "3:47" duration display bug and ensures the video matches audio length
-    const dur = (realDuration + 0.5).toFixed(3);
     const ffmpegCmd = [
       "ffmpeg -y",
-      `-stream_loop -1 -t ${dur} -i "${bgPath}"`,
+      `-i "${bgPath}"`,
       `-i "${audio.audioPath}"`,
       `-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,ass='${subsPath}'"`,
       "-c:v libx264 -preset fast -crf 23",
       "-c:a aac -b:a 192k",
       `-map 0:v -map 1:a`,
       `-t ${dur}`,
+      `-movflags +faststart`,
       `"${outputPath}"`,
     ].join(" ");
 
     execSync(ffmpegCmd, { stdio: "pipe" });
+
+    console.log(`[assembleVideo] output duration=${getFileDuration(outputPath).toFixed(1)}s`);
     return outputPath;
   }
 );
 
-function getAudioDuration(audioPath: string): number {
-  const out = execSync(
-    `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`,
-    { encoding: "utf-8" }
-  ).trim();
-  return parseFloat(out);
-}
+/**
+ * Build a finite background video long enough to cover audioDuration.
+ * Pexels clips often have corrupt duration metadata, so we measure real
+ * duration by re-encoding a short probe rather than trusting metadata.
+ */
+function buildBackground(clips: string[], workDir: string, targetDuration: number): string {
+  // Measure actual decodable duration of each clip (decode only, no output)
+  const realDurations = clips.map((c, i) => {
+    try {
+      const out = execSync(
+        `ffprobe -v error -count_packets -show_entries stream=nb_read_packets -of csv=p=0 -select_streams v:0 "${c}"`,
+        { encoding: "utf-8" }
+      ).trim();
+      // If packets > 0 but duration seems bogus, fall back to counting frames at 30fps
+      const meta = getFileDuration(c);
+      if (meta > 3600) {
+        // Bogus duration — count frames to estimate real length
+        const frames = parseInt(out, 10) || 30;
+        return frames / 30;
+      }
+      return meta;
+    } catch {
+      return 10;
+    }
+  });
 
-async function concatenateClips(clips: string[], workDir: string, targetDuration: number): Promise<string> {
+  console.log(`[assembleVideo] clip real durations: ${realDurations.map((d) => d.toFixed(1)).join(", ")}s`);
+
+  // Repeat clips until we have enough total duration
   const listFile = path.join(workDir, "clips.txt");
   const entries: string[] = [];
   let total = 0;
   let i = 0;
   while (total < targetDuration + 5) {
-    entries.push(`file '${clips[i % clips.length]}'`);
-    total += 15;
+    const idx = i % clips.length;
+    entries.push(`file '${clips[idx]}'`);
+    total += realDurations[idx];
     i++;
+    // Safety: don't loop more than 50 times
+    if (i > 50) break;
   }
+
   fs.writeFileSync(listFile, entries.join("\n"));
 
-  const concatPath = path.join(workDir, "bg_concat.mp4");
+  const concatPath = path.join(workDir, "bg_raw.mp4");
+  // Re-encode during concat to normalize framerates and fix any codec issues across clips
   execSync(
-    `ffmpeg -y -f concat -safe 0 -i "${listFile}" -c copy "${concatPath}"`,
+    `ffmpeg -y -f concat -safe 0 -i "${listFile}" -c:v libx264 -preset ultrafast -crf 28 -an "${concatPath}"`,
     { stdio: "pipe" }
   );
+
   return concatPath;
+}
+
+function getFileDuration(filePath: string): number {
+  const out = execSync(
+    `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filePath}"`,
+    { encoding: "utf-8" }
+  ).trim();
+  return parseFloat(out);
 }

@@ -1,6 +1,7 @@
 import { task } from "@renderinc/sdk/workflows";
 import { listBrainrotClips, downloadFile } from "@/lib/s3";
 import type { VideoMode } from "@/lib/types";
+import { execSync } from "child_process";
 import os from "os";
 import path from "path";
 import fs from "fs";
@@ -102,7 +103,14 @@ async function downloadVideoFromUrl(url: string, destPath: string): Promise<void
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Failed to download video: ${response.status}`);
   const buffer = await response.arrayBuffer();
-  fs.writeFileSync(destPath, Buffer.from(buffer));
+  const rawPath = destPath.replace(".mp4", "_raw.mp4");
+  fs.writeFileSync(rawPath, Buffer.from(buffer));
+  // Re-encode to strip corrupt container metadata (Pexels clips often report wrong duration)
+  execSync(
+    `ffmpeg -y -i "${rawPath}" -c:v libx264 -preset ultrafast -crf 26 -an -t 30 "${destPath}"`,
+    { stdio: "pipe" }
+  );
+  fs.unlinkSync(rawPath);
 }
 
 function shuffleArray<T>(arr: T[]): T[] {

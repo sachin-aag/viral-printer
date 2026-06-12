@@ -13,7 +13,7 @@ const PROFILE_KEY = "vp_profile";
 
 export function Dashboard() {
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>("create");
+  const [activeTab, setActiveTab] = useState<Tab>("scout");
   const [pendingPrompt, setPendingPrompt] = useState("");
   const [historyKey, setHistoryKey] = useState(0);
 
