@@ -70,6 +70,4 @@ export const PIPELINE_STEPS = [
   { name: "fetchVisuals", label: "Sourcing visuals" },
   { name: "assembleVideo", label: "Assembling video" },
   { name: "uploadToS3", label: "Uploading media" },
-  { name: "postToTikTok", label: "Posting to TikTok" },
-  { name: "logAnalytics", label: "Saving analytics" },
 ] as const;

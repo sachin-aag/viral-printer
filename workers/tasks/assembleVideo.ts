@@ -37,7 +37,7 @@ export const assembleVideoTask = task(
       // Audio comes from input 2 (our TTS), not from the HeyGen video
       ffmpegCmd = [
         "ffmpeg -y",
-        `-i "${bgPath}"`,
+        `-stream_loop -1 -i "${bgPath}"`,
         `-i "${speakerVideoPath}"`,
         `-i "${audio.audioPath}"`,
         `-filter_complex`,
@@ -55,7 +55,7 @@ export const assembleVideoTask = task(
     } else {
       ffmpegCmd = [
         "ffmpeg -y",
-        `-i "${bgPath}"`,
+        `-stream_loop -1 -i "${bgPath}"`,
         `-i "${audio.audioPath}"`,
         `-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,ass='${subsPath}'"`,
         "-c:v libx264 -preset fast -crf 23",
@@ -74,23 +74,23 @@ export const assembleVideoTask = task(
   }
 );
 
+const XFADE_DURATION = 0.8;
+
 /**
  * Build a finite background video long enough to cover audioDuration.
+ * Uses xfade crossfade transitions between clips for smooth scene changes.
  * Pexels clips often have corrupt duration metadata, so we measure real
  * duration by re-encoding a short probe rather than trusting metadata.
  */
 function buildBackground(clips: string[], workDir: string, targetDuration: number): string {
-  // Measure actual decodable duration of each clip (decode only, no output)
-  const realDurations = clips.map((c, i) => {
+  const realDurations = clips.map((c) => {
     try {
       const out = execSync(
         `ffprobe -v error -count_packets -show_entries stream=nb_read_packets -of csv=p=0 -select_streams v:0 "${c}"`,
         { encoding: "utf-8" }
       ).trim();
-      // If packets > 0 but duration seems bogus, fall back to counting frames at 30fps
       const meta = getFileDuration(c);
       if (meta > 3600) {
-        // Bogus duration — count frames to estimate real length
         const frames = parseInt(out, 10) || 30;
         return frames / 30;
       }
@@ -102,29 +102,64 @@ function buildBackground(clips: string[], workDir: string, targetDuration: numbe
 
   console.log(`[assembleVideo] clip real durations: ${realDurations.map((d) => d.toFixed(1)).join(", ")}s`);
 
-  // Repeat clips until we have enough total duration
-  const listFile = path.join(workDir, "clips.txt");
-  const entries: string[] = [];
+  // Build ordered list of clips (with repeats) to cover the target duration
+  const sequence: { path: string; duration: number }[] = [];
   let total = 0;
   let i = 0;
   while (total < targetDuration + 5) {
     const idx = i % clips.length;
-    entries.push(`file '${clips[idx]}'`);
+    sequence.push({ path: clips[idx], duration: realDurations[idx] });
     total += realDurations[idx];
     i++;
-    // Safety: don't loop more than 50 times
     if (i > 50) break;
   }
 
-  fs.writeFileSync(listFile, entries.join("\n"));
+  // Single clip — no transitions needed
+  if (sequence.length === 1) {
+    const concatPath = path.join(workDir, "bg_raw.mp4");
+    execSync(
+      `ffmpeg -y -i "${sequence[0].path}" -c:v libx264 -preset ultrafast -crf 28 -an "${concatPath}"`,
+      { stdio: "pipe" }
+    );
+    return concatPath;
+  }
+
+  // Normalize all clips to the same resolution/fps first so xfade works
+  const normPaths = sequence.map((s, idx) => {
+    const np = path.join(workDir, `norm_${idx}.mp4`);
+    execSync(
+      `ffmpeg -y -i "${s.path}" -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30" -c:v libx264 -preset ultrafast -crf 26 -an "${np}"`,
+      { stdio: "pipe" }
+    );
+    return np;
+  });
+  const normDurations = normPaths.map((p) => getFileDuration(p));
+
+  // Build xfade filter chain for smooth crossfades between every clip pair
+  const inputs = normPaths.map((p) => `-i "${p}"`).join(" ");
+  const filters: string[] = [];
+  let prevLabel = "[0:v]";
+  let offset = normDurations[0] - XFADE_DURATION;
+
+  for (let j = 1; j < normPaths.length; j++) {
+    const outLabel = j === normPaths.length - 1 ? "[out]" : `[v${j}]`;
+    filters.push(
+      `${prevLabel}[${j}:v]xfade=transition=fade:duration=${XFADE_DURATION}:offset=${Math.max(0, offset).toFixed(3)}${outLabel}`
+    );
+    prevLabel = outLabel;
+    if (j < normPaths.length - 1) {
+      offset += normDurations[j] - XFADE_DURATION;
+    }
+  }
 
   const concatPath = path.join(workDir, "bg_raw.mp4");
-  // Re-encode during concat to normalize framerates and fix any codec issues across clips
-  execSync(
-    `ffmpeg -y -f concat -safe 0 -i "${listFile}" -c:v libx264 -preset ultrafast -crf 28 -an "${concatPath}"`,
-    { stdio: "pipe" }
-  );
+  const ffCmd = `ffmpeg -y ${inputs} -filter_complex "${filters.join(";")}" -map "[out]" -c:v libx264 -preset fast -crf 26 -an "${concatPath}"`;
+  execSync(ffCmd, { stdio: "pipe" });
 
+  // Clean up normalized intermediates
+  normPaths.forEach((p) => { try { fs.unlinkSync(p); } catch {} });
+
+  console.log(`[assembleVideo] background with ${normPaths.length} clips, ${filters.length} crossfades`);
   return concatPath;
 }
 

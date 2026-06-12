@@ -20,6 +20,7 @@ if (process.env.RENDER_SDK_SOCKET_PATH) {
   });
 } else {
   console.log("[ViralPrinter] RENDER_SDK_SOCKET_PATH not set — tasks run in-process via localRunner.");
-  console.log("[ViralPrinter] No task server to start locally. Use `npm run dev` instead.");
-  process.exit(0);
+  console.log("[ViralPrinter] Keeping process alive; waiting for RENDER_SDK_SOCKET_PATH to become available...");
+  // Stay alive so Render doesn't restart in a tight loop
+  setInterval(() => {}, 60_000);
 }
