@@ -1,5 +1,5 @@
 import { task } from "@renderinc/sdk/workflows";
-import { insertPost } from "@/lib/clickhouse";
+import { ensureSchema, insertPost } from "@/lib/clickhouse";
 import type { PostResult, ScriptResult, HookStyle, VideoMode, Profile } from "@/lib/types";
 
 export const logAnalyticsTask = task(
@@ -15,6 +15,7 @@ export const logAnalyticsTask = task(
   ): Promise<void> {
     console.log(`[logAnalytics] runId=${runId} mock=${postResult.mock}`);
     try {
+      await ensureSchema();
       await insertPost({
         run_id: runId,
         prompt,

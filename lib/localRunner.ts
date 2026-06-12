@@ -28,6 +28,7 @@ export async function startLocalRun(runId: string, request: GenerateRequest): Pr
 
   // Fire-and-forget — do not await here
   runPipeline(runId, request).catch((err: unknown) => {
+    console.error("[localRunner] Pipeline FAILED:", err);
     jobs.set(runId, {
       status: "failed",
       startedAt: jobs.get(runId)?.startedAt ?? new Date().toISOString(),

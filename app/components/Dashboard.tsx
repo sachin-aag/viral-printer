@@ -111,10 +111,15 @@ export function Dashboard() {
         </main>
 
         {/* Footer */}
-        <footer className="border-t border-gray-900 px-4 py-3 text-center">
+        <footer className="border-t border-gray-900 px-4 py-3 text-center space-y-1">
           <p className="text-xs text-gray-700">
             Powered by{" "}
             <span className="text-gray-600">Render · Anthropic · Composio · ElevenLabs · AWS · ClickHouse</span>
+          </p>
+          <p className="text-xs text-gray-600">
+            <a href="/privacy" className="hover:text-gray-400">Privacy Policy</a>
+            {" · "}
+            <a href="/terms" className="hover:text-gray-400">Terms of Service</a>
           </p>
         </footer>
       </div>

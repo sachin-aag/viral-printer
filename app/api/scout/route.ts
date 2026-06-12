@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { scoutIdeas } from "@/lib/anthropic";
+import { scoutWithSources } from "@/lib/scout";
 
 export async function GET(req: NextRequest) {
   const niche = req.nextUrl.searchParams.get("niche") ?? "general";
 
   try {
-    const ideas = await scoutIdeas(niche, 5);
-    return NextResponse.json({ ideas });
+    const result = await scoutWithSources(niche);
+    return NextResponse.json(result);
   } catch (err) {
     console.error("[scout] failed:", err);
-    return NextResponse.json({ error: "Failed to generate ideas" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to scout ideas" }, { status: 500 });
   }
 }
