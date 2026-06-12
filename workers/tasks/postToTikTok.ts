@@ -8,7 +8,7 @@ export const postToTikTokTask = task(
     script: ScriptResult,
     localVideoPath: string
   ): Promise<PostResult> {
-    const entityId = process.env.COMPOSIO_TIKTOK_ENTITY_ID;
+    const entityId = process.env.COMPOSIO_TIKTOK_ENTITY_ID?.trim() || undefined;
 
     if (!entityId) {
       console.log("[postToTikTok] COMPOSIO_TIKTOK_ENTITY_ID not set — running in mock mode");

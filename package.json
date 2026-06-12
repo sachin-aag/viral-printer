@@ -7,8 +7,8 @@
     "build": "next build",
     "start": "next start",
     "build:worker": "tsc --project tsconfig.worker.json",
-    "dev:worker": "ts-node --project tsconfig.worker.json workers/index.ts",
-    "seed:brainrot": "ts-node --project tsconfig.worker.json scripts/seed-brainrot.ts"
+    "dev:worker": "tsx workers/index.ts",
+    "seed:brainrot": "tsx scripts/seed-brainrot.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
@@ -31,7 +31,9 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dotenv": "^17.4.2",
     "tailwindcss": "^4",
+    "tsx": "^4.22.4",
     "typescript": "^5"
   }
 }

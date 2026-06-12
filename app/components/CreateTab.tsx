@@ -64,7 +64,7 @@ export function CreateTab({ profile, initialPrompt = "", onGenerated }: Props) {
           onGenerated();
         } else if (data.status === "failed" || data.status === "canceled") {
           clearInterval(interval);
-          setState((s) => ({ ...s, status: "error", error: "Pipeline failed. Check logs." }));
+          setState((s) => ({ ...s, status: "error", error: data.error ?? "Pipeline failed." }));
         }
       } catch {
         // ignore transient poll failures

@@ -27,7 +27,10 @@ export const fetchVisualsTask = task(
 
 async function fetchBrainrotClips(outputDir: string, durationSeconds: number): Promise<string[]> {
   const clips = await listBrainrotClips();
-  if (clips.length === 0) throw new Error("No brainrot clips found in S3. Run seed-brainrot script first.");
+  if (clips.length === 0) {
+    console.log("[fetchVisuals] No brainrot clips in S3 — falling back to b-roll");
+    return fetchBrollClips("satisfying abstract loop", outputDir, durationSeconds);
+  }
 
   // Pick enough clips to cover the duration (each clip ~15-30s, we'll loop in FFmpeg)
   const picked = shuffleArray(clips).slice(0, Math.ceil(durationSeconds / 15) + 1);

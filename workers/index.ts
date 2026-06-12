@@ -11,8 +11,12 @@ import "./tasks/postToTikTok";
 import "./tasks/logAnalytics";
 import "./pipeline";
 
-console.log("[ViralPrinter] Starting Render Workflows task server...");
-startTaskServer().catch((err) => {
-  console.error("[ViralPrinter] Task server failed:", err);
-  process.exit(1);
-});
+if (process.env.RENDER_SDK_SOCKET_PATH) {
+  console.log("[ViralPrinter] Starting Render Workflows task server...");
+  startTaskServer().catch((err: unknown) => {
+    console.error("[ViralPrinter] Task server failed:", err);
+    process.exit(1);
+  });
+} else {
+  console.log("[ViralPrinter] RENDER_SDK_SOCKET_PATH not set — tasks run in-process via localRunner.");
+}
