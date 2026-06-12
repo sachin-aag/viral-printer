@@ -9,6 +9,7 @@ import "./tasks/assembleVideo";
 import "./tasks/uploadToS3";
 import "./tasks/postToTikTok";
 import "./tasks/logAnalytics";
+import "./tasks/generateSpeakerVideo";
 import "./pipeline";
 
 if (process.env.RENDER_SDK_SOCKET_PATH) {
@@ -19,4 +20,6 @@ if (process.env.RENDER_SDK_SOCKET_PATH) {
   });
 } else {
   console.log("[ViralPrinter] RENDER_SDK_SOCKET_PATH not set — tasks run in-process via localRunner.");
+  console.log("[ViralPrinter] No task server to start locally. Use `npm run dev` instead.");
+  process.exit(0);
 }

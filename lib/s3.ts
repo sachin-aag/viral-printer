@@ -51,6 +51,10 @@ export async function listBrainrotClips(): Promise<string[]> {
     .filter((key) => key.endsWith(".mp4"));
 }
 
+export async function uploadAudio(localPath: string, runId: string): Promise<string> {
+  return uploadFile(localPath, `audio/${runId}/voiceover.mp3`, "audio/mpeg");
+}
+
 export async function downloadFile(s3Key: string, destPath: string): Promise<void> {
   const s3 = makeS3Client();
   const response = await s3.send(new GetObjectCommand({ Bucket: bucket(), Key: s3Key }));

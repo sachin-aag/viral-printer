@@ -1,7 +1,18 @@
 import type { WordTimestamp } from "./types";
 
 // TikTok-style captions: 3-word groups, active word highlighted in yellow, centered
-export function buildAssSubtitles(wordTimestamps: WordTimestamp[], videoWidth = 1080, videoHeight = 1920): string {
+// speakerMode: positions subtitles in top half of frame (brainrot zone) instead of center
+export function buildAssSubtitles(
+  wordTimestamps: WordTimestamp[],
+  videoWidth = 1080,
+  videoHeight = 1920,
+  speakerMode = false
+): string {
+  // speakerMode: top-center (an8) with margin so text stays in brainrot zone
+  // standard: center-center (an5)
+  const alignment = speakerMode ? 8 : 5;
+  const marginV = speakerMode ? 120 : 50;
+
   const header = `[Script Info]
 ScriptType: v4.00+
 PlayResX: ${videoWidth}
@@ -10,7 +21,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,88,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,2,0,1,5,0,5,50,50,50,1
+Style: Default,Arial,88,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,2,0,1,5,0,${alignment},50,50,${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`;
@@ -36,8 +47,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
         })
         .join(" ");
 
-      // {\an5} = alignment override: center-middle of screen
-      events.push(`Dialogue: 0,${start},${end},Default,,0,0,0,,{\\an5}${line}`);
+      events.push(`Dialogue: 0,${start},${end},Default,,0,0,0,,{\\an${alignment}}${line}`);
     });
   }
 

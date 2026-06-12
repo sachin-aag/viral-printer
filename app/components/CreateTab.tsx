@@ -27,6 +27,8 @@ interface GenerateState {
   videoUrl?: string;
   error?: string;
   pollInterval?: ReturnType<typeof setInterval>;
+  postStatus?: "idle" | "posting" | "posted" | "error";
+  postError?: string;
 }
 
 interface Props {
@@ -35,17 +37,27 @@ interface Props {
   onGenerated: () => void;
 }
 
+const TRANSITION_DURATIONS = [2, 3, 5, 8] as const;
+
 export function CreateTab({ profile, initialPrompt = "", onGenerated }: Props) {
   const [prompt, setPrompt] = useState(initialPrompt);
   const [hookStyle, setHookStyle] = useState<HookStyle>("curiosity");
   const [videoMode, setVideoMode] = useState<VideoMode>("brainrot");
+  const [transitionDuration, setTransitionDuration] = useState(3);
   const [state, setState] = useState<GenerateState>({ status: "idle" });
 
   async function handleGenerate() {
     if (!prompt.trim() || state.status === "generating") return;
     setState({ status: "generating" });
 
-    const body: GenerateRequest = { prompt, hookStyle, videoMode, profile };
+    const body: GenerateRequest = {
+      prompt,
+      hookStyle,
+      videoMode,
+      ...(videoMode === "broll" && { transitionDuration }),
+      profile,
+      skipPost: true,
+    };
     try {
       const res = await fetch("/api/generate", {
         method: "POST",
@@ -62,6 +74,27 @@ export function CreateTab({ profile, initialPrompt = "", onGenerated }: Props) {
     }
   }
 
+  async function handlePost() {
+    if (!state.videoUrl || state.postStatus === "posting") return;
+    setState((s) => ({ ...s, postStatus: "posting", postError: undefined }));
+    try {
+      const res = await fetch("/api/post", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoUrl: state.videoUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Post failed");
+      if (data.mock) {
+        setState((s) => ({ ...s, postStatus: "error", postError: "TikTok posting not configured on server" }));
+      } else {
+        setState((s) => ({ ...s, postStatus: "posted" }));
+      }
+    } catch (err) {
+      setState((s) => ({ ...s, postStatus: "error", postError: String(err) }));
+    }
+  }
+
   function pollStatus(taskRunId: string) {
     let interval: ReturnType<typeof setInterval> | undefined;
 
@@ -75,7 +108,7 @@ export function CreateTab({ profile, initialPrompt = "", onGenerated }: Props) {
         if (data.status === "succeeded") {
           if (interval) clearInterval(interval);
           const videoUrl = data.result?.tiktokUrl ?? undefined;
-          setState((s) => ({ ...s, status: "done", videoUrl }));
+          setState((s) => ({ ...s, status: "done", videoUrl, postStatus: "idle" }));
           onGenerated();
         } else if (data.status === "failed" || data.status === "canceled") {
           if (interval) clearInterval(interval);
@@ -94,7 +127,7 @@ export function CreateTab({ profile, initialPrompt = "", onGenerated }: Props) {
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-semibold text-white mb-1">Create TikTok</h2>
-        <p className="text-sm text-gray-400">One prompt → hook → script → video → posted</p>
+        <p className="text-sm text-gray-400">One prompt → hook → script → video → ready to post</p>
       </div>
 
       {/* Prompt */}
@@ -134,30 +167,62 @@ export function CreateTab({ profile, initialPrompt = "", onGenerated }: Props) {
       {/* Video mode */}
       <div>
         <label className="block text-sm font-medium text-gray-300 mb-2">Video Style</label>
-        <div className="grid grid-cols-2 gap-3">
-          {(["brainrot", "broll"] as VideoMode[]).map((mode) => (
-            <button
-              key={mode}
-              onClick={() => setVideoMode(mode)}
-              className={`p-4 rounded-xl border text-left transition-colors ${
-                videoMode === mode
-                  ? "bg-pink-600/20 border-pink-500"
-                  : "bg-gray-900 border-gray-800 hover:border-gray-700"
-              }`}
-            >
-              <div className="text-xl mb-1">{mode === "brainrot" ? "🎮" : "🎬"}</div>
-              <div className="text-sm font-semibold text-white">
-                {mode === "brainrot" ? "Brainrot" : "B-Roll"}
-              </div>
-              <div className="text-xs text-gray-500 mt-0.5">
-                {mode === "brainrot"
-                  ? "Hypnotic satisfying background"
-                  : "Topic-matched stock footage"}
-              </div>
-            </button>
-          ))}
+        <div className="grid grid-cols-3 gap-2">
+          {(
+            [
+              { mode: "brainrot", emoji: "🎮", label: "Brainrot", desc: "Hypnotic background" },
+              { mode: "broll",    emoji: "🎬", label: "B-Roll",   desc: "Topic-matched footage" },
+              { mode: "speaker",  emoji: "🎙️", label: "Speaker",  desc: profile.avatarId ? "Brainrot + your avatar" : "Set up avatar first" },
+            ] as const
+          ).map(({ mode, emoji, label, desc }) => {
+            const disabled = mode === "speaker" && !profile.avatarId;
+            return (
+              <button
+                key={mode}
+                onClick={() => !disabled && setVideoMode(mode)}
+                disabled={disabled}
+                title={disabled ? "Upload an avatar in your profile to enable Speaker mode" : undefined}
+                className={`p-3 rounded-xl border text-left transition-colors ${
+                  disabled
+                    ? "bg-gray-900/40 border-gray-800/50 opacity-50 cursor-not-allowed"
+                    : videoMode === mode
+                    ? "bg-pink-600/20 border-pink-500"
+                    : "bg-gray-900 border-gray-800 hover:border-gray-700"
+                }`}
+              >
+                <div className="text-lg mb-1">{emoji}</div>
+                <div className="text-xs font-semibold text-white">{label}</div>
+                <div className="text-xs text-gray-500 mt-0.5 leading-tight">{desc}</div>
+              </button>
+            );
+          })}
         </div>
       </div>
+
+      {/* Scene duration — broll only */}
+      {videoMode === "broll" && (
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            Scene Duration
+            <span className="ml-2 text-xs text-gray-500 font-normal">how long each clip plays</span>
+          </label>
+          <div className="flex gap-2">
+            {TRANSITION_DURATIONS.map((d) => (
+              <button
+                key={d}
+                onClick={() => setTransitionDuration(d)}
+                className={`flex-1 py-2 rounded-xl text-sm font-semibold border transition-colors ${
+                  transitionDuration === d
+                    ? "bg-pink-600/20 border-pink-500 text-white"
+                    : "bg-gray-900 border-gray-800 text-gray-400 hover:border-gray-700"
+                }`}
+              >
+                {d}s
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Generate button */}
       <button
@@ -168,10 +233,10 @@ export function CreateTab({ profile, initialPrompt = "", onGenerated }: Props) {
         {state.status === "generating" ? (
           <span className="flex items-center justify-center gap-3">
             <span className="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            Generating your TikTok...
+            Generating your video...
           </span>
         ) : (
-          "Generate & Post 🚀"
+          "Generate Video 🎬"
         )}
       </button>
 
@@ -200,6 +265,27 @@ export function CreateTab({ profile, initialPrompt = "", onGenerated }: Props) {
                 Download MP4 ↓
               </a>
             </div>
+          )}
+
+          {/* Post to TikTok button */}
+          <button
+            onClick={handlePost}
+            disabled={state.postStatus === "posting" || state.postStatus === "posted"}
+            className="w-full py-3 mt-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-900/30"
+          >
+            {state.postStatus === "posting" ? (
+              <span className="flex items-center justify-center gap-3">
+                <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Posting to TikTok...
+              </span>
+            ) : state.postStatus === "posted" ? (
+              "Posted to TikTok ✓"
+            ) : (
+              "Post to TikTok 🚀"
+            )}
+          </button>
+          {state.postStatus === "error" && state.postError && (
+            <p className="text-red-400 text-xs text-center">{state.postError}</p>
           )}
         </div>
       )}

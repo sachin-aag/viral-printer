@@ -11,7 +11,8 @@ export const assembleVideoTask = task(
   async function assembleVideo(
     audio: AudioResult,
     bgVideoPaths: string[],
-    runId: string
+    runId: string,
+    speakerVideoPath?: string
   ): Promise<string> {
     if (bgVideoPaths.length === 0) throw new Error("No background video clips available");
 
@@ -19,28 +20,52 @@ export const assembleVideoTask = task(
     fs.mkdirSync(workDir, { recursive: true });
 
     const audioDuration = getFileDuration(audio.audioPath);
-    console.log(`[assembleVideo] clips=${bgVideoPaths.length} audioDuration=${audioDuration.toFixed(1)}s`);
+    const isSpeakerMode = !!speakerVideoPath;
+    console.log(`[assembleVideo] clips=${bgVideoPaths.length} audioDuration=${audioDuration.toFixed(1)}s speakerMode=${isSpeakerMode}`);
 
     const subsPath = path.join(workDir, "subs.ass");
-    fs.writeFileSync(subsPath, buildAssSubtitles(audio.wordTimestamps));
+    fs.writeFileSync(subsPath, buildAssSubtitles(audio.wordTimestamps, 1080, 1920, isSpeakerMode));
 
     const bgPath = buildBackground(bgVideoPaths, workDir, audioDuration);
-
     const outputPath = path.join(workDir, "final.mp4");
     const dur = (audioDuration + 0.2).toFixed(3);
 
-    const ffmpegCmd = [
-      "ffmpeg -y",
-      `-i "${bgPath}"`,
-      `-i "${audio.audioPath}"`,
-      `-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,ass='${subsPath}'"`,
-      "-c:v libx264 -preset fast -crf 23",
-      "-c:a aac -b:a 192k",
-      `-map 0:v -map 1:a`,
-      `-t ${dur}`,
-      `-movflags +faststart`,
-      `"${outputPath}"`,
-    ].join(" ");
+    let ffmpegCmd: string;
+
+    if (isSpeakerMode) {
+      // 50/50 split: brainrot top (960px) + speaker bottom (960px), stacked to 1080x1920
+      // Audio comes from input 2 (our TTS), not from the HeyGen video
+      ffmpegCmd = [
+        "ffmpeg -y",
+        `-i "${bgPath}"`,
+        `-i "${speakerVideoPath}"`,
+        `-i "${audio.audioPath}"`,
+        `-filter_complex`,
+        `"[0:v]scale=1080:960:force_original_aspect_ratio=increase,crop=1080:960[top];`,
+        `[1:v]scale=1080:960:force_original_aspect_ratio=increase,crop=1080:960[bottom];`,
+        `[top][bottom]vstack=inputs=2[stacked];`,
+        `[stacked]ass='${subsPath}'[out]"`,
+        `-map "[out]" -map 2:a`,
+        "-c:v libx264 -preset fast -crf 23",
+        "-c:a aac -b:a 192k",
+        `-t ${dur}`,
+        `-movflags +faststart`,
+        `"${outputPath}"`,
+      ].join(" ");
+    } else {
+      ffmpegCmd = [
+        "ffmpeg -y",
+        `-i "${bgPath}"`,
+        `-i "${audio.audioPath}"`,
+        `-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,ass='${subsPath}'"`,
+        "-c:v libx264 -preset fast -crf 23",
+        "-c:a aac -b:a 192k",
+        `-map 0:v -map 1:a`,
+        `-t ${dur}`,
+        `-movflags +faststart`,
+        `"${outputPath}"`,
+      ].join(" ");
+    }
 
     execSync(ffmpegCmd, { stdio: "pipe" });
 

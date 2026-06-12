@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   serverExternalPackages: [
-    "composio-core",
+    "@composio/core",
     "@renderinc/sdk",
     "@aws-sdk/client-polly",
     "@aws-sdk/client-s3",

@@ -5,9 +5,10 @@ import { OnboardingModal } from "./OnboardingModal";
 import { ScoutTab } from "./ScoutTab";
 import { CreateTab } from "./CreateTab";
 import { HistoryTab } from "./HistoryTab";
+import { AnalyticsTab } from "./AnalyticsTab";
 import type { Profile } from "@/lib/types";
 
-type Tab = "scout" | "create" | "history";
+type Tab = "analytics" | "scout" | "create" | "history";
 
 const PROFILE_KEY = "vp_profile";
 
@@ -44,6 +45,7 @@ export function Dashboard() {
     { id: "scout", label: "Scout", emoji: "🔍" },
     { id: "create", label: "Create", emoji: "✨" },
     { id: "history", label: "History", emoji: "📋" },
+    { id: "analytics", label: "Analytics", emoji: "📊" },
   ];
 
   return (
@@ -94,6 +96,9 @@ export function Dashboard() {
 
         {/* Content */}
         <main className="flex-1 px-4 py-6 max-w-2xl mx-auto w-full">
+          {activeTab === "analytics" && (
+            <AnalyticsTab />
+          )}
           {activeTab === "scout" && profile && (
             <ScoutTab niche={profile.niche} onSelectIdea={handleSelectIdea} />
           )}

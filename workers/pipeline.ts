@@ -7,6 +7,7 @@ import { assembleVideoTask } from "./tasks/assembleVideo";
 import { uploadToS3Task } from "./tasks/uploadToS3";
 import { postToTikTokTask } from "./tasks/postToTikTok";
 import { logAnalyticsTask } from "./tasks/logAnalytics";
+import { generateSpeakerVideoTask } from "./tasks/generateSpeakerVideo";
 import type { AudioResult, GenerateRequest, PostResult, ScriptResult, StepStatus } from "@/lib/types";
 
 export type PipelineStepUpdate = (stepName: string, status: StepStatus["status"]) => void;
@@ -44,40 +45,53 @@ export async function runTikTokPipeline(
     generateScriptTask(hook, prompt, profile) as Promise<ScriptResult>
   );
 
-  // Steps 3 & 4: Audio + visuals in parallel
-  onStep?.("generateAudio", "running");
-  onStep?.("fetchVisuals", "running");
-  const [audio, bgPaths] = await Promise.all([
-    (generateAudioTask(
-      script.fullText,
-      profile.voiceId,
-      profile.ttsProvider,
-      runId
-    ) as Promise<AudioResult>).then(
-      (result) => {
-        onStep?.("generateAudio", "succeeded");
-        return result;
-      },
-      (error) => {
-        onStep?.("generateAudio", "failed");
-        throw error;
-      }
-    ),
-    (fetchVisualsTask(script.topic, videoMode, 60, runId) as Promise<string[]>).then(
-      (result) => {
-        onStep?.("fetchVisuals", "succeeded");
-        return result;
-      },
-      (error) => {
-        onStep?.("fetchVisuals", "failed");
-        throw error;
-      }
-    ),
-  ]);
+  let audio: AudioResult;
+  let bgPaths: string[];
+  let speakerPath: string | undefined;
+
+  if (videoMode === "speaker") {
+    // Speaker mode: audio must finish first (HeyGen needs it), then speaker + brainrot in parallel
+    audio = await runTrackedStep("generateAudio", onStep, () =>
+      generateAudioTask(script.fullText, profile.voiceId, profile.ttsProvider, runId) as Promise<AudioResult>
+    );
+
+    const avatarId = profile.avatarId;
+    if (!avatarId) throw new Error("Speaker mode requires an avatar — set one up in your profile");
+
+    onStep?.("fetchVisuals", "running");
+    [speakerPath, bgPaths] = await Promise.all([
+      runTrackedStep("generateSpeakerVideo", onStep, () =>
+        generateSpeakerVideoTask(audio, avatarId, runId) as Promise<string>
+      ),
+      (fetchVisualsTask(script.topic, "brainrot", 60, runId, 3) as Promise<string[]>).then(
+        (result) => { onStep?.("fetchVisuals", "succeeded"); return result; },
+        (error) => { onStep?.("fetchVisuals", "failed"); throw error; }
+      ),
+    ]);
+  } else {
+    // Standard mode: audio + visuals in parallel
+    onStep?.("generateAudio", "running");
+    onStep?.("fetchVisuals", "running");
+    [audio, bgPaths] = await Promise.all([
+      (generateAudioTask(
+        script.fullText,
+        profile.voiceId,
+        profile.ttsProvider,
+        runId
+      ) as Promise<AudioResult>).then(
+        (result) => { onStep?.("generateAudio", "succeeded"); return result; },
+        (error) => { onStep?.("generateAudio", "failed"); throw error; }
+      ),
+      (fetchVisualsTask(script.topic, videoMode, 60, runId, request.transitionDuration ?? 3) as Promise<string[]>).then(
+        (result) => { onStep?.("fetchVisuals", "succeeded"); return result; },
+        (error) => { onStep?.("fetchVisuals", "failed"); throw error; }
+      ),
+    ]);
+  }
 
   // Step 5: Assemble video
   const videoPath = await runTrackedStep("assembleVideo", onStep, () =>
-    assembleVideoTask(audio, bgPaths, runId) as Promise<string>
+    assembleVideoTask(audio, bgPaths, runId, speakerPath) as Promise<string>
   );
 
   // Step 6: Upload to S3
@@ -85,10 +99,16 @@ export async function runTikTokPipeline(
     uploadToS3Task(videoPath, runId) as Promise<string>
   );
 
-  // Step 7: Post to TikTok
-  const postResult = await runTrackedStep("postToTikTok", onStep, () =>
-    postToTikTokTask(videoUrl, script, videoPath) as Promise<PostResult>
-  );
+  // Step 7: Post to TikTok (skip if requested)
+  let postResult: PostResult;
+  if (request.skipPost) {
+    onStep?.("postToTikTok", "succeeded");
+    postResult = { mock: true, tiktokUrl: videoUrl, localVideoPath: videoPath };
+  } else {
+    postResult = await runTrackedStep("postToTikTok", onStep, () =>
+      postToTikTokTask(videoUrl, script, videoPath) as Promise<PostResult>
+    );
+  }
 
   // Step 8: Log analytics
   await runTrackedStep("logAnalytics", onStep, () =>

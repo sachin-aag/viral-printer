@@ -13,6 +13,10 @@ services:
         sync: false
       - key: RENDER_WORKFLOWS_SERVICE_SLUG
         value: viralprinter-workflows
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: HEYGEN_API_KEY
+        sync: false
 
   - type: worker
     name: viralprinter-workflows
@@ -22,3 +26,7 @@ services:
     startCommand: npm run start:worker
     envVars:
       - fromGroup: viralprinter-shared
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: HEYGEN_API_KEY
+        sync: false

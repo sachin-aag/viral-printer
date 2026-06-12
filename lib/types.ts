@@ -1,6 +1,6 @@
 export type HookStyle = "curiosity" | "ragebait" | "controversy" | "stats" | "question" | "storytelling";
 
-export type VideoMode = "brainrot" | "broll";
+export type VideoMode = "brainrot" | "broll" | "speaker";
 
 export type TtsProvider = "polly" | "elevenlabs";
 
@@ -9,6 +9,7 @@ export interface Profile {
   styleDescription: string;
   voiceId: string;
   ttsProvider: TtsProvider;
+  avatarId?: string;
 }
 
 export interface ScriptResult {
@@ -35,7 +36,9 @@ export interface GenerateRequest {
   prompt: string;
   hookStyle: HookStyle;
   videoMode: VideoMode;
+  transitionDuration?: number;
   profile: Profile;
+  skipPost?: boolean;
 }
 
 export interface PostResult {
