@@ -3,7 +3,7 @@ services:
     name: viralprinter-web
     runtime: node
     plan: starter
-    buildCommand: npm install --legacy-peer-deps && npm run build
+    buildCommand: npm install --include=dev --legacy-peer-deps && npm run build
     startCommand: npm start
     envVars:
       - fromGroup: viralprinter-shared
@@ -18,7 +18,7 @@ services:
     name: viralprinter-workflows
     runtime: node
     plan: starter
-    buildCommand: npm install --legacy-peer-deps && npm run build:worker
+    buildCommand: npm install --include=dev --legacy-peer-deps && npm run build:worker
     startCommand: npm run start:worker
     envVars:
       - fromGroup: viralprinter-shared
